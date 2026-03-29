@@ -1,0 +1,214 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id        String    @id @default(uuid()) @db.Uuid
+  email     String    @unique
+  name      String?
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  projects  Project[]
+
+  @@map("users")
+}
+
+model Project {
+  id          String    @id @default(uuid()) @db.Uuid
+  ownerUserId String    @map("owner_user_id") @db.Uuid
+  name        String
+  slug        String    @unique
+  description String?
+  plan        String    @default("free")
+  status      String    @default("active")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  owner       User      @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  apiKeys     ApiKey[]
+  workflows   Workflow[]
+  runs        Run[]
+  projectUsageDaily  ProjectUsageDaily[]
+  workflowUsageDaily WorkflowUsageDaily[]
+
+  @@index([ownerUserId])
+  @@map("projects")
+}
+
+model ApiKey {
+  id         String    @id @default(uuid()) @db.Uuid
+  projectId  String    @map("project_id") @db.Uuid
+  name       String
+  keyPrefix  String    @map("key_prefix")
+  keyHash    String    @unique @map("key_hash")
+  status     String    @default("active")
+  lastUsedAt DateTime? @map("last_used_at") @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(6)
+
+  project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("api_keys")
+}
+
+model Workflow {
+  id                 String    @id @default(uuid()) @db.Uuid
+  projectId          String    @map("project_id") @db.Uuid
+  name               String
+  slug               String
+  description        String?
+  environmentDefault String?   @map("environment_default")
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project            Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  runs               Run[]
+  workflowUsageDaily WorkflowUsageDaily[]
+
+  @@unique([projectId, slug])
+  @@index([projectId])
+  @@map("workflows")
+}
+
+model Run {
+  id                   String    @id @default(uuid()) @db.Uuid
+  projectId            String    @map("project_id") @db.Uuid
+  workflowId           String?   @map("workflow_id") @db.Uuid
+  workflowNameSnapshot String    @map("workflow_name_snapshot")
+  externalRunId        String?   @map("external_run_id")
+  environment          String    @default("prod")
+  status               String
+  triggerType          String?   @map("trigger_type")
+  startedAt            DateTime  @map("started_at") @db.Timestamptz(6)
+  endedAt              DateTime? @map("ended_at") @db.Timestamptz(6)
+  totalLatencyMs       Int?      @map("total_latency_ms")
+  totalInputTokens     Int       @default(0) @map("total_input_tokens")
+  totalOutputTokens    Int       @default(0) @map("total_output_tokens")
+  totalCostUsd         Decimal   @default(0) @map("total_cost_usd") @db.Decimal(18, 6)
+  inputSummary         String?   @map("input_summary")
+  outputSummary        String?   @map("output_summary")
+  errorType            String?   @map("error_type")
+  errorMessage         String?   @map("error_message")
+  sourceUserId         String?   @map("source_user_id")
+  sessionId            String?   @map("session_id")
+  tagsJson             Json?     @map("tags_json")
+  metadataJson         Json?     @map("metadata_json")
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project              Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  workflow             Workflow? @relation(fields: [workflowId], references: [id], onDelete: SetNull)
+  steps                Step[]
+
+  @@index([projectId, startedAt(sort: Desc)])
+  @@index([projectId, status, startedAt(sort: Desc)])
+  @@index([projectId, workflowNameSnapshot, startedAt(sort: Desc)])
+  @@index([workflowId, startedAt(sort: Desc)])
+  @@index([projectId, externalRunId])
+  @@map("runs")
+}
+
+model Step {
+  id                 String    @id @default(uuid()) @db.Uuid
+  runId              String    @map("run_id") @db.Uuid
+  parentStepId       String?   @map("parent_step_id") @db.Uuid
+  sequenceNo         Int       @map("sequence_no")
+  stepName           String    @map("step_name")
+  stepType           String    @map("step_type")
+  status             String
+  provider           String?
+  model              String?
+  toolName           String?   @map("tool_name")
+  actionName         String?   @map("action_name")
+  targetSystem       String?   @map("target_system")
+  startedAt          DateTime  @map("started_at") @db.Timestamptz(6)
+  endedAt            DateTime? @map("ended_at") @db.Timestamptz(6)
+  runStartedOffsetMs Int?      @map("run_started_offset_ms")
+  latencyMs          Int?      @map("latency_ms")
+  inputPreview       String?   @map("input_preview")
+  outputPreview      String?   @map("output_preview")
+  inputTokens        Int       @default(0) @map("input_tokens")
+  outputTokens       Int       @default(0) @map("output_tokens")
+  costUsd            Decimal   @default(0) @map("cost_usd") @db.Decimal(18, 6)
+  errorType          String?   @map("error_type")
+  errorMessage       String?   @map("error_message")
+  approvalStatus     String    @default("not_applicable") @map("approval_status")
+  retryCount         Int       @default(0) @map("retry_count")
+  metadataJson       Json?     @map("metadata_json")
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  run                Run       @relation(fields: [runId], references: [id], onDelete: Cascade)
+  parentStep         Step?     @relation("StepHierarchy", fields: [parentStepId], references: [id], onDelete: SetNull)
+  childSteps         Step[]    @relation("StepHierarchy")
+
+  @@unique([runId, sequenceNo])
+  @@index([runId, sequenceNo])
+  @@index([runId, status])
+  @@index([stepType])
+  @@index([model])
+  @@index([toolName])
+  @@index([targetSystem])
+  @@map("steps")
+}
+
+model ModelPricing {
+  id                    String    @id @default(uuid()) @db.Uuid
+  provider              String
+  model                 String
+  pricingUnit           String    @default("per_1m_tokens") @map("pricing_unit")
+  inputPricePerMillion  Decimal   @map("input_price_per_million") @db.Decimal(18, 6)
+  outputPricePerMillion Decimal   @map("output_price_per_million") @db.Decimal(18, 6)
+  currency              String    @default("USD")
+  effectiveFrom         DateTime  @map("effective_from") @db.Timestamptz(6)
+  effectiveTo           DateTime? @map("effective_to") @db.Timestamptz(6)
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([provider, model, effectiveFrom(sort: Desc)])
+  @@map("model_pricing")
+}
+
+model ProjectUsageDaily {
+  id                String    @id @default(uuid()) @db.Uuid
+  projectId         String    @map("project_id") @db.Uuid
+  usageDate         DateTime  @map("usage_date") @db.Date
+  totalRuns         Int       @default(0) @map("total_runs")
+  successRuns       Int       @default(0) @map("success_runs")
+  failedRuns        Int       @default(0) @map("failed_runs")
+  totalInputTokens  Int       @default(0) @map("total_input_tokens")
+  totalOutputTokens Int       @default(0) @map("total_output_tokens")
+  totalCostUsd      Decimal   @default(0) @map("total_cost_usd") @db.Decimal(18, 6)
+  avgLatencyMs      Int?      @map("avg_latency_ms")
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project           Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, usageDate])
+  @@map("project_usage_daily")
+}
+
+model WorkflowUsageDaily {
+  id           String    @id @default(uuid()) @db.Uuid
+  projectId    String    @map("project_id") @db.Uuid
+  workflowId   String    @map("workflow_id") @db.Uuid
+  usageDate    DateTime  @map("usage_date") @db.Date
+  totalRuns    Int       @default(0) @map("total_runs")
+  failedRuns   Int       @default(0) @map("failed_runs")
+  totalCostUsd Decimal   @default(0) @map("total_cost_usd") @db.Decimal(18, 6)
+  avgLatencyMs Int?      @map("avg_latency_ms")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project      Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  workflow     Workflow  @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, workflowId, usageDate])
+  @@map("workflow_usage_daily")
+}
